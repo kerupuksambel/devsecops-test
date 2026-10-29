@@ -17,3 +17,6 @@ reports/
 zap/
 image.tar
 .playwright-mcp/
+
+# Environment variable files hold no secrets (demo IDs only), so they are tracked.
+!terraform/environments/*.tfvars

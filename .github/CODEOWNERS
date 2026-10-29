@@ -7,6 +7,7 @@
 /.trivyignore.yaml        @example/security-reviewers
 /.gitleaks.toml           @example/security-reviewers
 /.zap/                    @example/security-reviewers
+/app/api/openapi.yaml        @example/security-reviewers
 /sonar-project.properties @example/security-reviewers
 /security/                @example/security-reviewers
 /terraform/               @example/platform-team @example/security-reviewers

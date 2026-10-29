@@ -195,21 +195,79 @@ Several independent layers, so that no single failure exposes production:
 
 ## Example critical control: OIDC-only, environment-pinned deploy role
 
-> **PLACEHOLDER: to be filled in during the Terraform build phase (Task 3).**
-> The example will be taken from the real `terraform/` configuration once it exists and passes
-> `terraform validate` and the Trivy IaC scan, rather than written here as a standalone mock.
+The real role from [`terraform/ci_iam.tf`](../terraform/ci_iam.tf). It passes `terraform validate` and the Trivy IaC scan
+(see [`evidence/scan-results.md`](../evidence/scan-results.md)). `ci-deploy-dev` and `ci-deploy-staging` are the same code in
+their own accounts. It addresses two concerns from the brief: production credentials stored in CI/CD variables, and IAM
+permissions broader than necessary.
 
-**Chosen control:** the `ci-deploy-prod` IAM role (`arn:aws:iam::666666666666:role/ci-deploy-prod`). `ci-deploy-dev` and `ci-deploy-staging` follow the same pattern. It addresses two concerns from the brief: production credentials stored in CI/CD variables, and IAM permissions broader than necessary.
+```hcl
+# Trust: GitHub's OIDC provider only, for this repository AND the "production" GitHub Environment.
+data "aws_iam_policy_document" "deploy_trust" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [local.github_oidc_arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository}:environment:${local.github_environment}"]
+    }
+  }
+}
 
-The final example must show:
+# Permissions: deploy one service. Nothing else.
+data "aws_iam_policy_document" "deploy" {
+  statement { # RegisterTaskDefinition does not support resource-level permissions
+    actions   = ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"]
+    resources = ["*"]
+  }
+  statement {
+    actions   = ["ecs:UpdateService", "ecs:DescribeServices"]
+    resources = [aws_ecs_service.app.id]
+  }
+  statement { # may hand over only the two ECS roles, and only to ECS
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.execution.arn, aws_iam_role.task.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
 
-- **Trust policy:** `sts:AssumeRoleWithWebIdentity` from the GitHub OIDC provider only, with `aud = sts.amazonaws.com` and `sub = repo:<org>/<repo>:environment:production`.
-- **Session length:** `max_session_duration` of one hour.
-- **Permissions:**
-  - `ecs:RegisterTaskDefinition` (does not support resource-level permissions);
-  - `ecs:UpdateService` / `ecs:DescribeServices` on the single service ARN;
-  - `iam:PassRole` on only the task execution role and the task role, with `iam:PassedToService = ecs-tasks.amazonaws.com`.
-- **The matching GitHub Actions deploy job:** `environment: production`, `permissions: id-token: write`, and `aws-actions/configure-aws-credentials` pinned to a commit SHA, with no stored AWS secrets.
+resource "aws_iam_role" "ci_deploy" {
+  name                 = local.ci_deploy_role # ci-deploy-prod in the prod account
+  assume_role_policy   = data.aws_iam_policy_document.deploy_trust.json
+  max_session_duration = 3600
+}
+```
+
+The matching job (simplified from [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)) runs in the protected environment, requests an
+OIDC token, and stores no AWS secret:
+
+```yaml
+deploy:
+  environment: production        # required reviewers; the role trusts only this environment
+  permissions:
+    id-token: write              # request the OIDC token
+    contents: read
+  steps:
+    - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/ci-deploy-prod
+        aws-region: ap-southeast-3
+```
+
+Why this works: a fork, a feature branch or another repository cannot mint a token whose `sub` matches; the session lasts at
+most an hour; and a stolen session can only roll the one service, not read data or create other roles.
 
 ## Assumptions and limitations
 

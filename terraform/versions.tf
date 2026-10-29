@@ -1,5 +1,5 @@
 # Minimal skeleton so the pipeline has real IaC to validate and scan.
-# The full deployment (VPC, ECS, RDS, IAM, WAF) is built in Task 3.
+# Full deployment for ONE environment (one AWS account); see environments/*.tfvars.
 terraform {
   required_version = ">= 1.15.0"
 

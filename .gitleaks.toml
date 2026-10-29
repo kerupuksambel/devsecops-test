@@ -5,9 +5,15 @@ title = "devsecops-home-test"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Fictitious demo values documented as non-secret"
 regexes = [
   # Demo AWS account IDs used throughout the docs (not credentials).
   '''\b(111111111111|222222222222|333333333333|444444444444|555555555555|666666666666)\b''',
 ]
+
+# ZAP reports list the URLs it probed (random numeric paths, cloud-metadata paths). The
+# "generic-api-key" rule mistakes them for keys; reviewed, they contain no secret.
+[[allowlists]]
+description = "ZAP evidence reports: probed URLs, not secrets"
+paths = ['''evidence/raw/zap\.(json|html)$''']

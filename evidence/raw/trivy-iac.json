@@ -3,10 +3,18 @@
   "Trivy": {
     "Version": "0.76.1"
   },
-  "ReportID": "01a18625-e283-71c5-a100-cb97f2ca8991",
-  "CreatedAt": "2026-10-29T12:33:12.195119+07:00",
+  "ReportID": "01a1862e-a66e-7daf-ad2f-962cc14785bb",
+  "CreatedAt": "2026-10-29T12:42:46.6389+07:00",
+  "ArtifactID": "sha256:13f4db4e57ea50f042731b4f554cd381be325110e6893d08ee55c337b3db3baf",
   "ArtifactName": ".",
-  "ArtifactType": "filesystem",
+  "ArtifactType": "repository",
+  "Metadata": {
+    "Branch": "main",
+    "Commit": "56a7094804a3b976e04041620b9db7dd88f7f5f0",
+    "CommitMsg": "feat(task1-2): initial commit, architecture and docker images",
+    "Author": "Ammar Alifian Fahdan \u003ckerupuksambel.2000@gmail.com\u003e",
+    "Committer": "Ammar Alifian Fahdan \u003ckerupuksambel.2000@gmail.com\u003e"
+  },
   "Results": [
     {
       "Target": "app/Dockerfile",
@@ -45,7 +53,26 @@
       "Class": "config",
       "Type": "terraform",
       "MisconfSummary": {
-        "Successes": 53,
+        "Successes": 95,
+        "Failures": 0
+      }
+    },
+    {
+      "Target": "terraform/alb.tf",
+      "Class": "config",
+      "Type": "terraform"
+    },
+    {
+      "Target": "terraform/ecs.tf",
+      "Class": "config",
+      "Type": "terraform"
+    },
+    {
+      "Target": "terraform/tooling",
+      "Class": "config",
+      "Type": "terraform",
+      "MisconfSummary": {
+        "Successes": 56,
         "Failures": 0
       }
     }
