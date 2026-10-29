@@ -1,0 +1,7 @@
+# ZAP rule overrides: <rule id>	<IGNORE|INFO|WARN|FAIL>	<reason>
+# Pass/fail is decided by scripts/ci/zap-gate.sh from each alert's risk level.
+# Use IGNORE only for a triaged false positive, with owner, reason and review date,
+# approved by the security team (CODEOWNERS).
+#
+# Example (not active):
+# 10049	IGNORE	(Storable and Cacheable Content) owner: platform-team; API sends Cache-Control: no-store; review 2027-01-31

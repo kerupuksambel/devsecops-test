@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: DevSecOps home test API
+  version: 1.0.0
+  description: Minimal API used as the target of the security pipeline. ZAP's API scan reads this file.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check for the load balancer
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /api/v1/items:
+    get:
+      summary: List items
+      responses:
+        "200":
+          description: Items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+        "500":
+          description: Internal error (no detail returned)
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string

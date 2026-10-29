@@ -1,0 +1,19 @@
+.DS_Store
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfvars
+!*.tfvars.example
+
+# Go
+app/coverage.out
+app/api-bin
+
+# Local scan output
+reports/
+zap/
+image.tar
+.playwright-mcp/

@@ -1,0 +1,99 @@
+%% DevSecOps home test - target AWS architecture (prod account shown; dev/staging mirror it)
+%% Region ap-southeast-3 (Jakarta), 2 of 3 AZs. Account IDs are fictitious demo values.
+%% Decisions: ECS Fargate, one account per environment, NAT egress (filtered) + S3 gateway endpoint,
+%% RDS private with IAM database auth for the app, RDS-managed master secret (admin only),
+%% customer-managed KMS keys, WAF + ALB HTTPS-only, GitHub Actions OIDC, org CloudTrail to log archive.
+flowchart LR
+    user(["Internet clients"])
+    dev(["Developer"])
+    thirdparty(["Allow-listed third-party APIs"])
+
+    subgraph github["GitHub"]
+        repo["Repository<br/>branch protection + CODEOWNERS"]
+        gha["GitHub Actions<br/>SonarCloud, Trivy, Gitleaks, ZAP"]
+        envprod["Environments: dev, staging, production<br/>production requires reviewers"]
+        repo --> gha --> envprod
+    end
+
+    subgraph org["AWS Organization - region ap-southeast-3 (Jakarta)"]
+        direction LR
+        scp["Service Control Policies<br/>deny leaving org, deny disabling CloudTrail/GuardDuty,<br/>region allow-list, deny IAM user access keys"]
+
+        subgraph tooling["Shared tooling account 222222222222"]
+            ecr["Amazon ECR<br/>immutable tags, scan on push, KMS CMK"]
+            pushrole["IAM role: ci-image-push<br/>push to one repo only"]
+        end
+
+        subgraph prod["Prod workload account 666666666666 (dev 444444444444 / staging 555555555555 mirror it)"]
+            direction TB
+            planrole["IAM role: ci-terraform-plan<br/>metadata read-only, PR + main"]
+            deployrole["IAM role: ci-deploy-prod<br/>OIDC sub = environment:production"]
+            waf["AWS WAF<br/>managed rules + rate limit"]
+            dnsfw["Route 53 Resolver DNS Firewall<br/>domain allow-list, default block"]
+
+            subgraph vpc["VPC - 2 AZs, VPC Flow Logs on"]
+                direction TB
+                subgraph pub["Public subnets"]
+                    alb["Application Load Balancer<br/>HTTPS 443 only, TLS 1.2+, ACM cert<br/>SG: 443 from 0.0.0.0/0"]
+                    nat["NAT gateway per AZ<br/>outbound only"]
+                end
+                subgraph app["Private app subnets"]
+                    ecs["ECS Fargate service<br/>non-root, read-only root FS<br/>SG in: app port from ALB SG<br/>SG out: 443 + 5432 to RDS"]
+                    s3gw["S3 gateway endpoint<br/>ECR image layers"]
+                end
+                subgraph data["Private data subnets - no default route"]
+                    rds[("RDS PostgreSQL Multi-AZ<br/>KMS-encrypted, not public<br/>IAM DB auth for app_user<br/>SG: 5432 from ECS SG only")]
+                end
+            end
+            igw["Internet gateway"]
+
+            execrole["IAM: task execution role<br/>pull image, write logs only"]
+            taskrole["IAM: task role<br/>rds-db:connect as app_user only"]
+            sm["Secrets Manager<br/>RDS-managed master secret<br/>break-glass read only"]
+            kms["AWS KMS<br/>customer-managed keys"]
+            cw["CloudWatch<br/>logs, metrics, alarms"]
+            gd["GuardDuty"]
+        end
+
+        subgraph logarchive["Log archive / security account 333333333333"]
+            trail["Org CloudTrail<br/>all regions, log file validation"]
+            s3log[("S3 audit bucket<br/>KMS, Object Lock, deny delete")]
+            trail --> s3log
+        end
+    end
+
+    %% Request path
+    user -- "HTTPS" --> waf --> alb -- "HTTP to target group" --> ecs -- "TLS 5432, IAM auth token" --> rds
+
+    %% Egress (filtered) and AWS API access
+    ecs -- "443 egress" --> nat --> igw -- "allow-listed domains" --> thirdparty
+    nat -. "image pull, logs" .-> ecr
+    nat -.-> cw
+    ecs -.-> s3gw
+    dnsfw -. "filters VPC DNS" .-> vpc
+    rds -. "manages master secret" .-> sm
+    sm -.-> kms
+    rds -.-> kms
+    execrole -. "assumed by ECS agent" .-> ecs
+    taskrole -. "assumed by app" .-> ecs
+
+    %% CI/CD path: short-lived credentials via OIDC, no stored AWS keys
+    dev -- "pull request" --> repo
+    gha -- "OIDC AssumeRole" --> pushrole
+    pushrole --> ecr
+    gha -- "OIDC AssumeRole" --> planrole
+    envprod -- "OIDC AssumeRole after approval" --> deployrole
+    deployrole -- "update ECS service" --> ecs
+
+    %% Audit
+    prod -. "API events" .-> trail
+    gd -. "findings" .-> cw
+
+    classDef public fill:#fde2e1,stroke:#c0392b,color:#000
+    classDef private fill:#e1f0fd,stroke:#2471a3,color:#000
+    classDef iam fill:#fef5e1,stroke:#b9770e,color:#000
+    classDef sec fill:#e8f8ef,stroke:#1e8449,color:#000
+    class waf,alb,nat,igw public
+    class ecs,rds,s3gw private
+    class pushrole,planrole,deployrole,execrole,taskrole iam
+    class sm,kms,cw,gd,trail,s3log,ecr,scp,dnsfw sec

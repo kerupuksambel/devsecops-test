@@ -1,0 +1,584 @@
+# DevSecOps security pipeline.
+#
+# Every pull request and every push to main runs all security gates. A release
+# (image push + deploy) only happens from a push to main, and only if every gate passed.
+# A nightly scheduled run re-scans main with a fresh vulnerability database, so a CVE
+# published after the last commit is still found. It never releases anything.
+#
+# Supply-chain rules for this file:
+# - Every action is pinned to a full commit SHA (the tag is in the trailing comment).
+# - Scanners are installed as pinned binaries and checksum-verified, never via wrapper actions.
+# - Container images are pinned by digest.
+# - Default token permissions are read-only; jobs request only what they need.
+#
+# Policy: security/vulnerability-policy.md. Gate logic: scripts/ci/*.sh.
+
+name: security-pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 19 * * *" # daily 02:00 WIB (UTC+7)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TERRAFORM_VERSION: "1.17.1"
+  TRIVY_VERSION: "0.76.1"
+  TRIVY_SHA256: "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  ZAP_IMAGE: "ghcr.io/zaproxy/zaproxy:stable@sha256:030d3df57735dacbb83464854758e674dd9ad01d79d12a129a8e58b1fd384238"
+  IMAGE_NAME: devsecops-api
+  KEV_URL: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Source validation: does the code build, pass tests, and is IaC well-formed?
+  # ---------------------------------------------------------------------------
+  source-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+
+      - name: Verify modules, vet, and run the test suite
+        working-directory: app
+        run: |
+          go mod verify
+          test -z "$(gofmt -l .)" || { echo "::error::gofmt found unformatted files"; gofmt -l .; exit 1; }
+          go vet ./...
+          go test -race -coverprofile=coverage.out ./...
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform format and validate
+        working-directory: terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate
+
+      - name: Upload coverage for SonarCloud
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: app/coverage.out
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 2. Secret scanning: Gitleaks over the FULL git history. Any finding fails.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Gitleaks (pinned, checksum-verified)
+        run: >
+          scripts/ci/install-tool.sh gitleaks
+          "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          "$GITLEAKS_SHA256"
+
+      - name: Scan full history
+        # --redact keeps secret values out of the logs and the report.
+        run: |
+          mkdir -p reports
+          gitleaks git . --config .gitleaks.toml --redact \
+            --report-format sarif --report-path reports/gitleaks.sarif --exit-code 1
+
+      - name: Upload SARIF to code scanning
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: reports/gitleaks.sarif
+          category: gitleaks
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-gitleaks
+          path: reports/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 3. SAST: SonarCloud. The quality gate (new Blocker/Critical issues) decides pass/fail.
+  # ---------------------------------------------------------------------------
+  sast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: source-validation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # SonarCloud needs history to tell new code from old
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage
+          path: app
+
+      - name: Require SonarCloud token
+        # Fail closed: a missing token must never turn into a silently skipped gate.
+        # Dependabot PRs only see Dependabot secrets, so SONAR_TOKEN must also be
+        # stored as a Dependabot secret, or every dependency-update PR is blocked here.
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is not available to this run; the SAST gate cannot run. For Dependabot PRs, add it as a Dependabot secret."
+            exit 1
+          fi
+
+      - name: SonarCloud scan and quality gate
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  # ---------------------------------------------------------------------------
+  # 4. SCA: Trivy dependency scan of go.sum.
+  # ---------------------------------------------------------------------------
+  sca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      medium: ${{ steps.gate.outputs.medium }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy (pinned, checksum-verified)
+        run: >
+          scripts/ci/install-tool.sh trivy
+          "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          "$TRIVY_SHA256"
+
+      - name: Scan dependencies
+        run: |
+          mkdir -p reports
+          trivy fs app --scanners vuln --ignorefile .trivyignore.yaml \
+            --format json --output reports/trivy-sca.json
+          trivy convert --format sarif --output reports/trivy-sca.sarif reports/trivy-sca.json
+          trivy convert --format table reports/trivy-sca.json
+
+      - name: Apply vulnerability policy
+        id: gate
+        run: |
+          curl -fsSL --proto '=https' -o reports/kev.json "$KEV_URL" || echo "::warning::CISA KEV feed unavailable"
+          scripts/ci/trivy-gate.sh reports/trivy-sca.json reports/kev.json
+
+      - name: Upload SARIF to code scanning
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: reports/trivy-sca.sarif
+          category: trivy-sca
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-sca
+          path: |
+            reports/trivy-sca.json
+            reports/trivy-sca.sarif
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 5. IaC scanning: Trivy misconfiguration scan of Terraform and the Dockerfile.
+  #    No cloud credentials: this is a static scan of the files in the repository.
+  # ---------------------------------------------------------------------------
+  iac-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      medium: ${{ steps.gate.outputs.medium }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy (pinned, checksum-verified)
+        run: >
+          scripts/ci/install-tool.sh trivy
+          "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          "$TRIVY_SHA256"
+
+      - name: Scan Terraform and Dockerfile
+        run: |
+          mkdir -p reports
+          trivy config . --ignorefile .trivyignore.yaml \
+            --format json --output reports/trivy-iac.json
+          trivy convert --format sarif --output reports/trivy-iac.sarif reports/trivy-iac.json
+          trivy convert --format table reports/trivy-iac.json
+
+      - name: Apply IaC policy
+        id: gate
+        run: scripts/ci/trivy-gate.sh reports/trivy-iac.json
+
+      - name: Upload SARIF to code scanning
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: reports/trivy-iac.sarif
+          category: trivy-iac
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-iac
+          path: |
+            reports/trivy-iac.json
+            reports/trivy-iac.sarif
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 5b. IaC plan scan: plan scanning resolves variables and modules, so it catches what
+  #     the static scan misses. It needs a real AWS account, so it runs only when
+  #     AWS_PLAN_ENABLED is true. Only this job can request an OIDC token.
+  # ---------------------------------------------------------------------------
+  iac-plan-scan:
+    if: ${{ vars.AWS_PLAN_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # assume ci-terraform-plan (metadata read-only)
+    outputs:
+      medium: ${{ steps.gate.outputs.medium }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy (pinned, checksum-verified)
+        run: >
+          scripts/ci/install-tool.sh trivy
+          "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          "$TRIVY_SHA256"
+
+      - name: Configure AWS credentials (OIDC, ci-terraform-plan)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ap-southeast-3
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform plan and scan plan JSON
+        working-directory: terraform
+        env:
+          PROD_ACCOUNT_ID: ${{ vars.AWS_PROD_ACCOUNT_ID }}
+        run: |
+          mkdir -p ../reports
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform plan -input=false -lock=false -out=tfplan \
+            -var "environment=prod" -var "aws_account_id=${PROD_ACCOUNT_ID}"
+          terraform show -json tfplan > ../reports/tfplan.json
+          trivy config ../reports/tfplan.json --ignorefile ../.trivyignore.yaml \
+            --format json --output ../reports/trivy-plan.json
+          trivy convert --format table ../reports/trivy-plan.json
+
+      - name: Apply IaC policy to the plan
+        id: gate
+        run: scripts/ci/trivy-gate.sh reports/trivy-plan.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-iac-plan
+          path: reports/trivy-plan.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 6. Build the image once. The exact image scanned below is the one released.
+  # ---------------------------------------------------------------------------
+  build-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: source-validation
+    outputs:
+      image-id: ${{ steps.build.outputs.image-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        id: build
+        run: |
+          docker build --pull --tag "$IMAGE_NAME:${GITHUB_SHA}" app
+          echo "image-id=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:${GITHUB_SHA}")" >> "$GITHUB_OUTPUT"
+          docker save "$IMAGE_NAME:${GITHUB_SHA}" --output image.tar
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: image.tar
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 7. Container scanning: vulnerabilities and secrets in the built image, plus an SBOM.
+  # ---------------------------------------------------------------------------
+  container-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: build-image
+    permissions:
+      contents: read
+      security-events: write
+    outputs:
+      medium: ${{ steps.gate.outputs.medium }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+
+      - name: Install Trivy (pinned, checksum-verified)
+        run: >
+          scripts/ci/install-tool.sh trivy
+          "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          "$TRIVY_SHA256"
+
+      - name: Scan image and generate SBOM
+        run: |
+          mkdir -p reports
+          trivy image --input image.tar --scanners vuln,secret --ignorefile .trivyignore.yaml \
+            --format json --output reports/trivy-image.json
+          trivy convert --format sarif --output reports/trivy-image.sarif reports/trivy-image.json
+          trivy convert --format table reports/trivy-image.json
+          trivy image --input image.tar --format cyclonedx --output reports/sbom.cdx.json
+
+      - name: Apply vulnerability policy
+        id: gate
+        run: |
+          curl -fsSL --proto '=https' -o reports/kev.json "$KEV_URL" || echo "::warning::CISA KEV feed unavailable"
+          scripts/ci/trivy-gate.sh reports/trivy-image.json reports/kev.json
+
+      - name: Upload SARIF to code scanning
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: reports/trivy-image.sarif
+          category: trivy-image
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-image
+          path: |
+            reports/trivy-image.json
+            reports/trivy-image.sarif
+            reports/sbom.cdx.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 8. DAST: run the built image on the runner (no AWS, no real data) and scan it with ZAP.
+  # ---------------------------------------------------------------------------
+  dast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: build-image
+    outputs:
+      medium: ${{ steps.gate.outputs.medium }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+
+      - name: Start the app in an isolated, hardened container
+        # In-memory mode (no DB_HOST): no database, no credentials, nothing to leak.
+        run: |
+          docker load --input image.tar
+          docker run --detach --name api --publish 127.0.0.1:8080:8080 \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            "$IMAGE_NAME:${GITHUB_SHA}"
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/healthz && exit 0
+            sleep 1
+          done
+          docker logs api
+          exit 1
+
+      - name: ZAP API scan against the OpenAPI spec
+        run: |
+          mkdir -p zap
+          cp app/api/openapi.yaml .zap/rules.tsv zap/
+          chmod -R a+rwX zap
+          # -I: do not fail on warnings here; the policy script below decides.
+          docker run --rm --network host --volume "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -c rules.tsv \
+            -J zap.json -r zap.html -I
+
+      - name: Apply DAST policy
+        id: gate
+        run: scripts/ci/zap-gate.sh zap/zap.json
+
+      - name: Stop the app
+        if: ${{ always() }}
+        run: docker rm --force api || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: report-dast
+          path: |
+            zap/zap.json
+            zap/zap.html
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 9. Review flag: untriaged Medium findings never fail the build, but they
+  #    label the PR and request a second engineer's review.
+  # ---------------------------------------------------------------------------
+  security-review-flag:
+    if: ${{ github.event_name == 'pull_request' && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [sca, iac-scan, iac-plan-scan, container-scan, dast]
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Flag Medium findings for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MEDIUM_SCA: ${{ needs.sca.outputs.medium }}
+          MEDIUM_IAC: ${{ needs.iac-scan.outputs.medium }}
+          MEDIUM_PLAN: ${{ needs.iac-plan-scan.outputs.medium }}
+          MEDIUM_IMAGE: ${{ needs.container-scan.outputs.medium }}
+          MEDIUM_DAST: ${{ needs.dast.outputs.medium }}
+          SECURITY_REVIEWERS: ${{ vars.SECURITY_REVIEWERS_TEAM }}
+        run: scripts/ci/review-flag.sh
+
+  # ---------------------------------------------------------------------------
+  # 10. Release: main only, after every gate passed. Without real AWS access
+  #     (AWS_DEPLOY_ENABLED != 'true') each step is a simulation that prints what it would do.
+  # ---------------------------------------------------------------------------
+  push-image:
+    # !failure() instead of the implicit success(): iac-plan-scan is skipped when AWS
+    # planning is off, and a skipped dependency must not skip the release. Any
+    # failed gate still blocks it.
+    if: ${{ !failure() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [build-image, secret-scan, sast, sca, iac-scan, iac-plan-scan, container-scan, dast]
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image-ref: ${{ steps.push.outputs.image-ref }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+
+      - name: Configure AWS credentials (OIDC, ci-image-push)
+        if: ${{ vars.AWS_DEPLOY_ENABLED == 'true' }}
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_TOOLING_ACCOUNT_ID }}:role/ci-image-push
+          aws-region: ap-southeast-3
+
+      - name: Push the scanned image to ECR
+        id: push
+        env:
+          DEPLOY_ENABLED: ${{ vars.AWS_DEPLOY_ENABLED }}
+          REGISTRY: ${{ vars.AWS_TOOLING_ACCOUNT_ID }}.dkr.ecr.ap-southeast-3.amazonaws.com
+        run: |
+          docker load --input image.tar
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "SIMULATION: would push $IMAGE_NAME:${GITHUB_SHA} to $REGISTRY/$IMAGE_NAME"
+            echo "image-ref=$REGISTRY/$IMAGE_NAME@${{ needs.build-image.outputs.image-id || 'sha256:simulated' }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+          docker tag "$IMAGE_NAME:${GITHUB_SHA}" "$REGISTRY/$IMAGE_NAME:${GITHUB_SHA}"
+          docker push "$REGISTRY/$IMAGE_NAME:${GITHUB_SHA}"
+          # Deploy by digest (immutable), never by tag.
+          echo "image-ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$IMAGE_NAME:${GITHUB_SHA}")" >> "$GITHUB_OUTPUT"
+
+  deploy-dev:
+    needs: push-image
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      image-ref: ${{ needs.push-image.outputs.image-ref }}
+    permissions:
+      contents: read
+      id-token: write
+
+  deploy-staging:
+    needs: [push-image, deploy-dev]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      image-ref: ${{ needs.push-image.outputs.image-ref }}
+    permissions:
+      contents: read
+      id-token: write
+
+  deploy-production:
+    needs: [push-image, deploy-staging]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      image-ref: ${{ needs.push-image.outputs.image-ref }}
+    permissions:
+      contents: read
+      id-token: write

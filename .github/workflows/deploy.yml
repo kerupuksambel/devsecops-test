@@ -1,0 +1,79 @@
+# Reusable deploy job, called once per environment by security-pipeline.yml.
+#
+# Protection lives in the GitHub Environment (Settings > Environments), not in this file:
+# - dev:        deployment branch main only
+# - staging:    deployment branch main only
+# - production: deployment branch main only + required reviewers (no self-review)
+#
+# Each environment holds its own variables: AWS_ACCOUNT_ID, ECS_CLUSTER, ECS_SERVICE,
+# ECS_TASK_FAMILY. The OIDC role is ci-deploy-<env>, which trusts only
+# repo:<org>/<repo>:environment:<env>, so a job without the approved environment
+# cannot get credentials at all.
+
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image-ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEPLOY_ENABLED: ${{ vars.AWS_DEPLOY_ENABLED }}
+      IMAGE_REF: ${{ inputs.image-ref }}
+      TARGET_ENV: ${{ inputs.environment }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+    steps:
+      - name: Configure AWS credentials (OIDC, ci-deploy-${{ inputs.environment }})
+        if: ${{ vars.AWS_DEPLOY_ENABLED == 'true' }}
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/ci-deploy-${{ inputs.environment == 'production' && 'prod' || inputs.environment }}
+          aws-region: ap-southeast-3
+          role-duration-seconds: 3600
+
+      - name: Roll out the new image
+        run: |
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "SIMULATION: deploy to $TARGET_ENV"
+            echo "  1. aws ecs describe-task-definition --task-definition ${ECS_TASK_FAMILY:-<family>}"
+            echo "  2. replace the container image with $IMAGE_REF (by digest)"
+            echo "  3. aws ecs register-task-definition (new revision)"
+            echo "  4. aws ecs update-service --cluster ${ECS_CLUSTER:-<cluster>} --service ${ECS_SERVICE:-<service>}"
+            echo "  5. aws ecs wait services-stable"
+            exit 0
+          fi
+
+          aws ecs describe-task-definition --task-definition "$ECS_TASK_FAMILY" \
+            --query taskDefinition > taskdef.json
+          # Keep only the fields register-task-definition accepts, and swap in the new image digest.
+          jq --arg img "$IMAGE_REF" '
+            .containerDefinitions[0].image = $img
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)' taskdef.json > taskdef-new.json
+          new_arn=$(aws ecs register-task-definition --cli-input-json file://taskdef-new.json \
+            --query taskDefinition.taskDefinitionArn --output text)
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "$new_arn" > /dev/null
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          echo "Deployed $IMAGE_REF to $TARGET_ENV as $new_arn"

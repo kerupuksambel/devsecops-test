@@ -1,0 +1,430 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.76.1"
+  },
+  "ReportID": "01a18626-6de3-7298-af81-a4d724aa174b",
+  "CreatedAt": "2026-10-29T12:33:47.875171+07:00",
+  "ArtifactName": "app",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "go.mod",
+      "Class": "lang-pkgs",
+      "Type": "gomod",
+      "Packages": [
+        {
+          "ID": "github.com/example/devsecops-home-test/app",
+          "Name": "github.com/example/devsecops-home-test/app",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/example/devsecops-home-test/app",
+            "UID": "3a55fdc385be554"
+          },
+          "Relationship": "root",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2/config@v1.33.12",
+            "github.com/aws/aws-sdk-go-v2/feature/rds/auth@v1.7.8",
+            "github.com/jackc/pgx/v5@v5.11.0"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/config@v1.33.12",
+          "Name": "github.com/aws/aws-sdk-go-v2/config",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/config@v1.33.12",
+            "UID": "8da7a30a95b4b5d9"
+          },
+          "Version": "v1.33.12",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Relationship": "direct",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/aws-sdk-go-v2/credentials@v1.20.12",
+            "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@v1.20.5",
+            "github.com/aws/aws-sdk-go-v2/service/signin@v1.12.0",
+            "github.com/aws/aws-sdk-go-v2/service/sso@v1.39.0",
+            "github.com/aws/aws-sdk-go-v2/service/ssooidc@v1.44.0",
+            "github.com/aws/aws-sdk-go-v2/service/sts@v1.51.6",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/feature/rds/auth@v1.7.8",
+          "Name": "github.com/aws/aws-sdk-go-v2/feature/rds/auth",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/feature/rds/auth@v1.7.8",
+            "UID": "6cd101dbc6378014"
+          },
+          "Version": "v1.7.8",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Relationship": "direct",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/jackc/pgx/v5@v5.11.0",
+          "Name": "github.com/jackc/pgx/v5",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/jackc/pgx/v5@v5.11.0",
+            "UID": "d25145c40ad59307"
+          },
+          "Version": "v5.11.0",
+          "Licenses": [
+            "MIT"
+          ],
+          "Relationship": "direct",
+          "DependsOn": [
+            "github.com/jackc/pgpassfile@v1.0.0",
+            "github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+            "github.com/jackc/puddle/v2@v2.2.2",
+            "golang.org/x/sync@v0.22.0",
+            "golang.org/x/text@v0.41.0"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2@v1.47.5",
+          "Name": "github.com/aws/aws-sdk-go-v2",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "UID": "1d2728439bcc3bbf"
+          },
+          "Version": "v1.47.5",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/credentials@v1.20.12",
+          "Name": "github.com/aws/aws-sdk-go-v2/credentials",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/credentials@v1.20.12",
+            "UID": "49a38bb76674758b"
+          },
+          "Version": "v1.20.12",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@v1.20.5",
+            "github.com/aws/aws-sdk-go-v2/service/signin@v1.12.0",
+            "github.com/aws/aws-sdk-go-v2/service/sso@v1.39.0",
+            "github.com/aws/aws-sdk-go-v2/service/ssooidc@v1.44.0",
+            "github.com/aws/aws-sdk-go-v2/service/sts@v1.51.6",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@v1.20.5",
+          "Name": "github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/feature/ec2/imds@v1.20.5",
+            "UID": "35e12be44e75e937"
+          },
+          "Version": "v1.20.5",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/internal/configsources@v1.5.8",
+          "Name": "github.com/aws/aws-sdk-go-v2/internal/configsources",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/internal/configsources@v1.5.8",
+            "UID": "c965099ef3c6d50f"
+          },
+          "Version": "v1.5.8",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.8.8",
+          "Name": "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.8.8",
+            "UID": "14d0aff943c6b80e"
+          },
+          "Version": "v2.8.8",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/internal/v4a@v1.5.8",
+          "Name": "github.com/aws/aws-sdk-go-v2/internal/v4a",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/internal/v4a@v1.5.8",
+            "UID": "1e7e2d09e808a6eb"
+          },
+          "Version": "v1.5.8",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@v1.13.23",
+          "Name": "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@v1.13.23",
+            "UID": "787ecba44e37f310"
+          },
+          "Version": "v1.13.23",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@v1.14.8",
+          "Name": "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@v1.14.8",
+            "UID": "860a52388d223bb9"
+          },
+          "Version": "v1.14.8",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/service/signin@v1.12.0",
+          "Name": "github.com/aws/aws-sdk-go-v2/service/signin",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/service/signin@v1.12.0",
+            "UID": "218c22f3dbd8ffcf"
+          },
+          "Version": "v1.12.0",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/aws-sdk-go-v2/internal/configsources@v1.5.8",
+            "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.8.8",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/service/sso@v1.39.0",
+          "Name": "github.com/aws/aws-sdk-go-v2/service/sso",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/service/sso@v1.39.0",
+            "UID": "c3ced649fe853cc2"
+          },
+          "Version": "v1.39.0",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/aws-sdk-go-v2/internal/configsources@v1.5.8",
+            "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.8.8",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/service/ssooidc@v1.44.0",
+          "Name": "github.com/aws/aws-sdk-go-v2/service/ssooidc",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/service/ssooidc@v1.44.0",
+            "UID": "2d26aa7bacee3db6"
+          },
+          "Version": "v1.44.0",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/aws-sdk-go-v2/internal/configsources@v1.5.8",
+            "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.8.8",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/aws-sdk-go-v2/service/sts@v1.51.6",
+          "Name": "github.com/aws/aws-sdk-go-v2/service/sts",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/aws-sdk-go-v2/service/sts@v1.51.6",
+            "UID": "b880c389452ed819"
+          },
+          "Version": "v1.51.6",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "github.com/aws/aws-sdk-go-v2@v1.47.5",
+            "github.com/aws/aws-sdk-go-v2/internal/configsources@v1.5.8",
+            "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.8.8",
+            "github.com/aws/aws-sdk-go-v2/internal/v4a@v1.5.8",
+            "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@v1.13.23",
+            "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@v1.14.8",
+            "github.com/aws/smithy-go@v1.28.7"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/aws/smithy-go@v1.28.7",
+          "Name": "github.com/aws/smithy-go",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/aws/smithy-go@v1.28.7",
+            "UID": "baa8b29b696205b6"
+          },
+          "Version": "v1.28.7",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/jackc/pgpassfile@v1.0.0",
+          "Name": "github.com/jackc/pgpassfile",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+            "UID": "2bab45fd9d7b2c86"
+          },
+          "Version": "v1.0.0",
+          "Licenses": [
+            "MIT"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+          "Name": "github.com/jackc/pgservicefile",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+            "UID": "ea0d3d3d4e027702"
+          },
+          "Version": "v0.0.0-20240606120523-5a60cdf6a761",
+          "Licenses": [
+            "MIT"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "github.com/jackc/puddle/v2@v2.2.2",
+          "Name": "github.com/jackc/puddle/v2",
+          "Identifier": {
+            "PURL": "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+            "UID": "3ad2b07a6ecf1c4d"
+          },
+          "Version": "v2.2.2",
+          "Licenses": [
+            "MIT"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "DependsOn": [
+            "golang.org/x/sync@v0.22.0"
+          ],
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "golang.org/x/sync@v0.22.0",
+          "Name": "golang.org/x/sync",
+          "Identifier": {
+            "PURL": "pkg:golang/golang.org/x/sync@v0.22.0",
+            "UID": "e6cd5f262e4a208a"
+          },
+          "Version": "v0.22.0",
+          "Licenses": [
+            "BSD-3-Clause"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "AnalyzedBy": "gomod"
+        },
+        {
+          "ID": "golang.org/x/text@v0.41.0",
+          "Name": "golang.org/x/text",
+          "Identifier": {
+            "PURL": "pkg:golang/golang.org/x/text@v0.41.0",
+            "UID": "120b5ee729568f35"
+          },
+          "Version": "v0.41.0",
+          "Licenses": [
+            "BSD-3-Clause"
+          ],
+          "Indirect": true,
+          "Relationship": "indirect",
+          "AnalyzedBy": "gomod"
+        }
+      ]
+    }
+  ]
+}

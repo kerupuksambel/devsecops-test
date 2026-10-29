@@ -1,0 +1,20 @@
+# Pinned versions only stay safe if they are bumped. Dependabot opens a PR for each
+# update, and every PR runs the full security pipeline before it can merge.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /app
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /app
+    schedule:
+      interval: weekly
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly

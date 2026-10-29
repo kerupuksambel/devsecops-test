@@ -1,0 +1,13 @@
+# Gitleaks configuration: the built-in rule set plus project allow-lists.
+# Every allow-list entry needs a reason; changes require security review (see CODEOWNERS).
+title = "devsecops-home-test"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fictitious demo values documented as non-secret"
+regexes = [
+  # Demo AWS account IDs used throughout the docs (not credentials).
+  '''\b(111111111111|222222222222|333333333333|444444444444|555555555555|666666666666)\b''',
+]

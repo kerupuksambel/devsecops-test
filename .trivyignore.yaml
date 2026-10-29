@@ -1,0 +1,21 @@
+# Approved exceptions to the vulnerability policy (security/vulnerability-policy.md).
+#
+# Rules:
+# - Only for a false positive, or an unfixable finding that is not actively exploited.
+#   A finding with a fixed version, or on the CISA KEV list, must be fixed instead.
+# - Every entry needs: statement (owner, reason, compensating control, approver) and
+#   expired_at. After that date Trivy reports the finding again and the gate fails.
+# - Changes to this file require approval from the security team (CODEOWNERS).
+#
+# Example (not active):
+# vulnerabilities:
+#   - id: CVE-2026-00000
+#     paths: ["usr/lib/libexample.so"]
+#     statement: >-
+#       owner: platform-team; reason: no upstream fix yet, code path unreachable from the API;
+#       compensating control: WAF rule X; approved-by: security-team, 2026-10-29
+#     expired_at: 2026-12-31
+
+vulnerabilities: []
+misconfigurations: []
+secrets: []
